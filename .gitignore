@@ -1,3 +1,8 @@
+# removing data files
+*/Data/*
+*Data/*
+*Data*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
