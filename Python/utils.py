@@ -3,6 +3,24 @@ import numpy as np
 from tensorflow.keras.utils import Sequence, to_categorical # For our own data generator
 import cv2 # For image processing
 import matplotlib.pyplot as plt # for showing the val vs train model
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow import config
+#gpus=tf.config.experimental.list_physical_devices('GPU')
+#tf.config.experimental.set_memory_growth(gpus[0], True)
+
+
+def gpu_limiter(mem_growth: bool = True,
+                mem_fraction: int = 1,
+                gpu_to_limits: int = 0
+               ):
+    gpus = config.experimental.list_physical_devices('GPU')
+    if mem_growth:    
+        config.experimental.set_memory_growth(gpus[gpu_to_limits], True)
+    else:
+        pass
+        #Haven't figured out how to implement the max memory allocation
+        #per_process_gpu_memory_fractio
+        
 
 class DataGenerator(Sequence):
     """Generates data for Keras
@@ -10,18 +28,20 @@ class DataGenerator(Sequence):
     #https://towardsdatascience.com/keras-data-generators-and-how-to-use-them-b69129ed779c
     """
     def __init__(self,
-                 csv_file, # file that has the images on it, as well as the image types
-                 y_var = 'grapheme_root', #'grapheme_root','vowel_diacritic','consonant_diacritic' 
-                 image_dir = 'Image_Dir',
-                 to_fit=True,
-                 batch_size=32,
-                 dim = (90,160),
-                 channels = 1,
-                 vertical_flip = 0,
-                 horizontal_flip = 0,
-                 rotate = (0,0), #PRob, max roatioan
-                 shear = (0,0), # prob, max_shear
-                 shuffle=True):
+                 csv_file: pd.DataFrame, # file that has the images on it, as well as the image types
+                 y_var: str = 'grapheme_root', #'grapheme_root','vowel_diacritic','consonant_diacritic' 
+                 image_dir: str = 'Image_Dir',
+                 to_fit: bool =True,
+                 batch_size: int = 32,
+                 dim: tuple = (90,160),
+                 channels: int = 1,
+                 vertical_flip: float = 0,
+                 horizontal_flip: float = 0,
+                 rotate: tuple = (0,0), #PRob, max roatioan
+                 shear: tuple = (0,0), # prob, max_shear
+                 shuffle: bool =True,
+                 balance_classes: bool = True,
+                 save_model_path: bool = None):
         """Initialization
         :param csv_File #CSV file that has the path to the stores on it
         :param y_var: a list of 'root','voewl','consonant'
@@ -83,6 +103,8 @@ class DataGenerator(Sequence):
         
         assert 0 <= shear[1] <=359, "first value of shear = {}, which is not between 0 or 359".format(shear[1])
         self.s_fact = shear[1]
+        
+        self.save_model(save_model_path)
         #self.on_epoch_end()
         
     def __len__(self):
@@ -105,9 +127,9 @@ class DataGenerator(Sequence):
 
         if self.fit:
             y = self._generate_y(Batch_Idx)
-            return X, y
+            return X, y, [None]
         else:
-            return X
+            return X, [None]
         
     #TODO at a def __iter__ and __next__ methodology so we can loop through it!
 
@@ -117,7 +139,20 @@ class DataGenerator(Sequence):
         #self.indexes = np.arange(len(self.list_IDs))
         if self.shuffle == True:
             np.random.shuffle(self.Idx_List)
-
+        if self.save_path is not None:
+            self.save_chkpoint
+            
+    def save_model(self, save_model_path: str = None):
+        """ Provides a callback to save the path"""
+        if save_model_path is not None:
+            self.save_chkpoint = ModelCheckpoint(save_model_path, 
+                                            monitor='val_accuracy', 
+                                            verbose=1, 
+                                            save_best_only=True,
+                                            mode='max')
+            self.save_path = save_model_path
+        else:
+            self.save_path = None
     def _generate_X(self, Batch_Idx):
         """Generates data containing batch_size images
         :param list_IDs_temp: list of label ids to load
