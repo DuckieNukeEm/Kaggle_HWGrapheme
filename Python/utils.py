@@ -4,22 +4,9 @@ from tensorflow.keras.utils import Sequence, to_categorical # For our own data g
 import cv2 # For image processing
 import matplotlib.pyplot as plt # for showing the val vs train model
 from tensorflow.keras.callbacks import ModelCheckpoint
-from tensorflow import config
 #gpus=tf.config.experimental.list_physical_devices('GPU')
 #tf.config.experimental.set_memory_growth(gpus[0], True)
 
-
-def gpu_limiter(mem_growth: bool = True,
-                mem_fraction: int = 1,
-                gpu_to_limits: int = 0
-               ):
-    gpus = config.experimental.list_physical_devices('GPU')
-    if mem_growth:    
-        config.experimental.set_memory_growth(gpus[gpu_to_limits], True)
-    else:
-        pass
-        #Haven't figured out how to implement the max memory allocation
-        #per_process_gpu_memory_fractio
         
 
 class DataGenerator(Sequence):
@@ -40,7 +27,7 @@ class DataGenerator(Sequence):
                  rotate: tuple = (0,0), #PRob, max roatioan
                  shear: tuple = (0,0), # prob, max_shear
                  shuffle: bool =True,
-                 balance_classes: bool = True,
+                 sample_classes: int = 0,
                  save_model_path: bool = None):
         """Initialization
         :param csv_File #CSV file that has the path to the stores on it
@@ -54,6 +41,7 @@ class DataGenerator(Sequence):
         :param rotate: (tuple - (prob, degree)) A two unit tuple, first is the % chance of rotate, the next is the amount of rotation
         :param shear: (tuple - (prob, amt)) A two unit tuple, first is the % chance of shear, the next is the amount of shear
         :param shuffle: True to shuffle label indexes after every epoch
+        :param sample_classes: random samle n number from each class
         """
         
         #Getting Index that we will use to sort
@@ -76,8 +64,15 @@ class DataGenerator(Sequence):
         #Setting other vars
         self.batch_size = batch_size
         self.fit = to_fit
-        self.shuffle = shuffle
         
+        self.class_samp = sample_classes
+        if self.class_samp > 0:            
+            self.sample_class()
+            
+        self.shuffle = shuffle
+        if self.shuffle:
+            np.random.shuffle(self.Idx_List)
+            
         self.dim = dim
         self.channels = channels
         if self.channels == 1:
@@ -86,6 +81,8 @@ class DataGenerator(Sequence):
             self.read_mode = cv2.IMREAD_COLOR
         else:
             self.read_mode = cv2.IMREAD_UNCHANGED
+        
+        
         
         assert 0 <= vertical_flip <=1, "vertical_flip = {}, which is not between 0 or 1".format(vertical_flip)
         self.v_flip = vertical_flip
@@ -137,11 +134,27 @@ class DataGenerator(Sequence):
         """Updates indexes after each epoch
         """
         #self.indexes = np.arange(len(self.list_IDs))
+        self.sample_class()
         if self.shuffle == True:
             np.random.shuffle(self.Idx_List)
         if self.save_path is not None:
-            self.save_chkpoint
-            
+            #self.save_chkpoint()
+            self.save_model()
+        
+    def sample_class(self):
+        """ rebalance the data"""
+        if self.class_samp > 0:
+            self.Idx_List = (pd.DataFrame({'Y':self.y_var})
+                    .reset_index()
+                    .groupby('Y')
+                    .index
+                    .apply(lambda x: x.sample(n=self.class_samp, replace=True))
+                    .droplevel(0)
+                    .values     
+                    )
+    
+    
+    
     def save_model(self, save_model_path: str = None):
         """ Provides a callback to save the path"""
         if save_model_path is not None:
@@ -167,20 +180,6 @@ class DataGenerator(Sequence):
             X[i,] = self._load_image(self.Imgs[ID])
 
         return X
-
-    def _generate_y_bck(self, Batch_Idx):
-        """Generates data containing batch_size masks
-        :param list_IDs_temp: list of label ids to load
-        :return: batch if masks
-        """
-        y = np.empty((self.batch_size, *self.dim), dtype=int)
-
-        # Generate data
-        for i, ID in enumerate(Batch_Idx):
-            # Store sample
-            y[i,] = self._load_image(self.mask_path + self.labels[ID])
-
-        return y
     
     def _generate_y(self, Batch_Idx):
         y = self.y[Batch_Idx,:]
@@ -191,8 +190,7 @@ class DataGenerator(Sequence):
         #self.y = pd.get_dummies(pd.Categorical(self.y_var)).values
         self.y = to_categorical(self.y_var)
         print("Number of Encodings is {}".format(self.y.shape[1]))
-        self.y_dim = self.y.shape[1]
-        
+        self.y_dim = self.y.shape[1]      
 
 
     def _load_image(self, image_path):
